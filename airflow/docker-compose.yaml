@@ -98,6 +98,9 @@ services:
 
     airflow-webserver:
         <<: *airflow-common
+        build:
+            context: .
+            dockerfile: Dockerfile
         command: webserver
         ports:
             - "8080:8080"
@@ -115,6 +118,9 @@ services:
 
     airflow-scheduler:
         <<: *airflow-common
+        build:
+            context: .
+            dockerfile: Dockerfile
         command: scheduler
         healthcheck:
             test: ["CMD", "curl", "--fail", "http://127.0.0.1:8080/health"]
@@ -130,6 +136,9 @@ services:
 
     airflow-triggerer:
         <<: *airflow-common
+        build:
+            context: .
+            dockerfile: Dockerfile
         command: triggerer
         healthcheck:
             test:
@@ -149,6 +158,9 @@ services:
 
     airflow-init:
         <<: *airflow-common
+        build:
+            context: .
+            dockerfile: Dockerfile
         entrypoint: /bin/bash
         # yamllint disable rule:line-length
         command:
