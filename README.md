@@ -135,7 +135,7 @@ Notebooks utilizados para análise exploratória e desenvolvimento e das funçõ
 
 Para executar esse processo, você precisa de uma service-account do meu projeto. Se necessário, pode me chamar. Ela não estará no repositório do projeto.
 
-Para adaptar a um projeto novo, certifique-se de ativar a API do Big Query e de criar os datasets necessários. E certifique-se da sua SA ter acessos de modificação no Storage e no Big Query.
+Para adaptar ao seu projeto, certifique-se de ativar a API do Big Query e de criar os datasets necessários. E certifique-se da sua SA ter acessos de modificação no Storage e no Big Query.
 
 1. Tenha instalado `Docker` e `docker-compose` em sua máquina
 2. Vá ao diretório do airflow e execute o `docker-compose up`.
