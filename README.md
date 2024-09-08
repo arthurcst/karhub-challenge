@@ -8,7 +8,7 @@ Esse desafio foi enviado pela KarHub para avaliar a forma como eu arquiteto e cr
 
 `O desafio consiste em desenvolver um ETL para processar arquivos que representam o orçamento do Estado de São Paulo de 2022 e armazená-los em um formato consistente para responder perguntas que ajudarão nosso time.`
 
-Mais informações podem ser encontradas no repositório oficial do desafio, que eu não sei se poderia colocar aqui.
+Mais informações podem ser encontradas no repositório oficial do desafio.
 
 ---
 
@@ -89,13 +89,6 @@ Dividi o Pipeline em 4 etapas, sendo 1 para extração, 1 para load e 2 para tra
 
 -   Puxamos o dado da memória e colocamos no GCS.
 
-##### Load
-
--   Puxamos o dado do GCS para o Big Query, dataset utilizado foi o gdv_raw.
--   Adicionamos a coluna de `dt_insert`
--   Na tabela de despesas tinhamos alguns problemas relacionados a formato e colunas inexistentes.
-    -   Nesse caso, já deixei removido a coluna `Unnamed: 3` e removi a última linha dos dois arquivos.
-
 ##### Transform
 
 ###### Etapa 1
@@ -116,6 +109,18 @@ Dividi o Pipeline em 4 etapas, sendo 1 para extração, 1 para load e 2 para tra
 -   Calculados os totais de cada uma das colunas de valor agregado por fonte
 
 ![Imagem do bigquery na tabela refined](./public/bigquery_refined.png)
+
+##### Load
+
+O processo de Load é executado em várias etapas.
+
+-   Puxamos o dado do GCS para o Big Query, dataset utilizado foi o gdv_raw.
+    -   Adicionamos a coluna de `dt_insert`
+    -   Na tabela de despesas tinhamos alguns problemas relacionados a formato e colunas inexistentes.
+        -   Nesse caso, já deixei removido a coluna `Unnamed: 3` e removi a última linha dos dois arquivos.
+-   Carregamos a etapa 1 e 2 da transformação no BigQuery também
+    -   Temos as fontes da tabela `refined` disponíveis para consulta, o que nos ajuda nas perguntas finais do projeto
+    -   Como fizemos o load na etapa 1, temos as entidades `despesa` e `receita` bem definidas na camada trusted, o que facilita algumas análises
 
 ### data_engineer_test_v2
 
