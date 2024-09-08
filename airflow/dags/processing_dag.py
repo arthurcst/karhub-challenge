@@ -1,16 +1,16 @@
 """Arquivo responsável pela criação da Dag de processamento e suas tasks."""
 
+from dags_util import on_failure, on_success, get_dollar_quotation, upload_to_bq
 from google.cloud.storage.client import Client as StorageClient
 from google.cloud.bigquery import Client as BqClient
 from airflow.decorators import task, dag
-from google.cloud import bigquery
 from datetime import timedelta
 from io import BytesIO
+
 
 import polars as pl
 import pandas as pd
 import pendulum
-import requests
 import logging
 import os
 
@@ -22,8 +22,8 @@ logger.setLevel("INFO")
 
 # Constantes
 
-KEY_PATH = "/opt/airflow/credentials/karhub-key.json"
 # Tive problemas com o arquivo .env, então precisei setar manualmente
+KEY_PATH = "/opt/airflow/credentials/karhub-key.json"
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = KEY_PATH
 
 DAG_ID = os.path.basename(__file__).replace(".py", "")
@@ -32,48 +32,6 @@ DAG_OWNER_NAME = "Data Engineering"
 BUCKET = "etl-karhub-dados-sp"
 PROJECT = "karhub-434807"
 SCHEDULE_INTERVAL = None  # Dag com agendamento MANUAL
-
-# Configurações de libs
-
-# pl.Config(tbl_rows=100, tbl_cols=10, fmt_str_lengths=150, fmt_float="full")
-
-
-def on_failure(context):
-    return logger.error("Detailed Log: %s", context)
-
-
-def on_success(context):
-    return logger.info("Task finished with success.")
-
-
-def get_dollar_quotation():
-    response = requests.get(
-        "https://economia.awesomeapi.com.br/json/daily/USD-BRL/?start_date=20220622&end_date=20220622"
-    )
-    response.raise_for_status()
-    data = response.json()
-
-    # Pelo que entendi, no fim do dia, bid foi o preço final de compra
-    return float(data.pop().get("bid"))
-
-
-def upload_to_bq(df: pd.DataFrame, namespace: str):
-    # Exportação para o BQ
-    bq_client = BqClient(project=PROJECT)
-
-    # o Job utilizará a write disposition de write_truncate pois a carga não é incremental nem histórica
-    # Se trata de uma tabela estática, logo, sempre que fizermos a carga, iremos reescrevê-la
-    job_config = bigquery.LoadJobConfig(
-        autodetect=True, write_disposition=bigquery.WriteDisposition.WRITE_TRUNCATE
-    )
-
-    try:
-        job = bq_client.load_table_from_dataframe(df, namespace, job_config=job_config)
-        job.result()
-    except Exception as e:
-        logger.error("Erro durante o Load Table: %s", e)
-
-    logger.info("Job foi finalizado. A tabela %s foi atualizada.", namespace)
 
 
 default_args = {
@@ -124,7 +82,7 @@ def processing_dag():
         except Exception as e:
             logger.error("Erro encontrado: %s", e)
 
-    # @task
+    @task
     def storage_to_raw(
         gcs_file_path: str,
         table_name: str,
@@ -345,15 +303,15 @@ def processing_dag():
         gcs_file_path=receitas_gcs_file_path, table_name="receitas"
     )
 
-    despesas_curated = tratamento_despesas()
-    receitas_curated = tratamento_receitas()
+    despesas_trusted = tratamento_despesas()
+    receitas_trusted = tratamento_receitas()
 
     consolidada_refined = consolidated_refined()
 
-    extraction_despesas >> despesas_export_to_raw >> despesas_curated  # type: ignore
-    extraction_receitas >> receitas_export_to_raw >> receitas_curated  # type: ignore
+    extraction_despesas >> despesas_export_to_raw >> despesas_trusted  # type: ignore
+    extraction_receitas >> receitas_export_to_raw >> receitas_trusted  # type: ignore
 
-    [despesas_curated, receitas_curated] >> consolidada_refined  # type: ignore
+    [despesas_trusted, receitas_trusted] >> consolidada_refined  # type: ignore
 
 
 dag_instance = processing_dag()
