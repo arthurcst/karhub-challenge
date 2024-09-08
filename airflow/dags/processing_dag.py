@@ -107,6 +107,14 @@ def processing_dag():
         gcs_file_path: str,
         bucket_name: str = "etl-karhub-dados-sp",
     ):
+        """Task responsável pela extração do arquivo .csv local para o bucket na GCP.
+
+        Args:
+            local_file_path (str): Caminho para o arquivo dentro da máquina.
+            gcs_file_path (str): Caminho para o arquivo dentro do bucket.
+            bucket_name (str, optional): Nome do bucket. Defaults to "etl-karhub-dados-sp".
+        """
+
         client = StorageClient(project=PROJECT)
         try:
             bucket = client.bucket(bucket_name)
@@ -116,13 +124,21 @@ def processing_dag():
         except Exception as e:
             logger.error("Erro encontrado: %s", e)
 
-    @task
+    # @task
     def storage_to_raw(
         gcs_file_path: str,
         table_name: str,
         dataset_name: str = "gdv_raw",
         bucket_name: str = "etl-karhub-dados-sp",
     ):
+        """Task responsável por puxar os dados do GCS para o BQ.
+
+        Args:
+            gcs_file_path (str): Caminho para o arquivo dentro do bucket.
+            table_name (str): Nome da tabela.
+            dataset_name (str, optional): Nome do dataset. Defaults to "gdv_raw".
+            bucket_name (str, optional): Nome do bucket. Defaults to "etl-karhub-dados-sp".
+        """
 
         table_id = f"{PROJECT}.{dataset_name}.{table_name}"
 
@@ -149,9 +165,19 @@ def processing_dag():
 
     @task
     def tratamento_despesas():
+        """
+        Task responsável pelo tratamento da tabela Raw de despesas.
+
+        Os dados são extraídos diretamente do BQ.
+        O tratamento é feito utilizando Polars.
+        """
+
         bq_client = BqClient(project=PROJECT)
         namespace = f"{PROJECT}.gdv_raw.despesas"
 
+        # Em caso de um processamento incremental, faríamos a extração apenas
+        # do dado do dia em questão.
+        # para isso, temos a coluna dt_insert!
         query = f"""
                     SELECT *
                     FROM `{namespace}`
@@ -199,9 +225,19 @@ def processing_dag():
 
     @task
     def tratamento_receitas():
+        """
+        Task responsável pelo tratamento da tabela Raw de receitas.
+
+        Os dados são extraídos diretamente do BQ.
+        O tratamento é feito utilizando Polars.
+        """
+
         bq_client = BqClient(project=PROJECT)
         namespace = f"{PROJECT}.gdv_raw.receitas"
 
+        # Em caso de um processamento incremental, faríamos a extração apenas
+        # do dado do dia em questão.
+        # para isso, temos a coluna dt_insert!
         query = f"""
                     SELECT *
                     FROM `{namespace}`
@@ -248,6 +284,13 @@ def processing_dag():
 
     @task
     def consolidated_refined():
+        """
+        Task responsável por gerar a tabela consolidada.
+
+        Quis fazer em SQL só para ter mais variedade de tipos de Tasks.
+        Dessa forma, pude aproveitar um pouco da vantagem de estar conectado num ambiente GCP com Big Query
+        """
+
         bq_client = BqClient(project=PROJECT)
 
         query = """
@@ -278,16 +321,19 @@ def processing_dag():
 
         upload_to_bq(df, target_namespace)
 
-    despesas_file_path = "/opt/airflow/files/gdvDespesasExcel.csv"
-    despesas_gcs_file_path = f"/despesas/gdvDespesas.csv"
+    # Paths dos arquivos locais / gcs
 
+    despesas_file_path = "/opt/airflow/files/gdvDespesasExcel.csv"
     receitas_file_path = "/opt/airflow/files/gdvReceitasExcel.csv"
+
+    despesas_gcs_file_path = f"/despesas/gdvDespesas.csv"
     receitas_gcs_file_path = f"receitas/gdvReceitas.csv"
+
+    # Criação das Tasks
 
     extraction_despesas = csv_to_storage.override(task_id="upload_despesas")(
         despesas_file_path, despesas_gcs_file_path, BUCKET
     )
-
     extraction_receitas = csv_to_storage.override(task_id="upload_receitas")(
         receitas_file_path, receitas_gcs_file_path, BUCKET
     )
