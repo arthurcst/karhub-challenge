@@ -18,7 +18,7 @@ logger.setLevel("INFO")
 
 
 @task
-def storage_to_raw(
+def create_raw_gdv(
     gcs_file_path: str,
     table_name: str,
     dataset_name: str = "gdv_raw",

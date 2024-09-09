@@ -3,8 +3,8 @@
 from tasks.refined.refined_consolidated import create_consolidated
 from tasks.trusted.trusted_despesas import create_trusted_despesas
 from tasks.trusted.trusted_receitas import create_trusted_receitas
-from tasks.ingestion.csv_to_storage import csv_to_storage
-from tasks.raw.storage_to_raw import storage_to_raw
+from tasks.ingestion.gdv_storage import csv_to_storage
+from tasks.raw.gdv_raw import create_raw_gdv
 
 from dags_util import on_failure, on_success
 from airflow.decorators import dag
@@ -74,11 +74,11 @@ def processing_dag():
     extraction_receitas = csv_to_storage.override(task_id="upload_receitas")(
         receitas_file_path, receitas_gcs_file_path, BUCKET
     )
-    despesas_export_to_raw = storage_to_raw.override(task_id="despesas_raw")(
+    despesas_export_to_raw = create_raw_gdv.override(task_id="despesas_raw")(
         gcs_file_path=despesas_gcs_file_path, table_name="despesas"
     )
 
-    receitas_export_to_raw = storage_to_raw.override(task_id="receitas_raw")(
+    receitas_export_to_raw = create_raw_gdv.override(task_id="receitas_raw")(
         gcs_file_path=receitas_gcs_file_path, table_name="receitas"
     )
 
