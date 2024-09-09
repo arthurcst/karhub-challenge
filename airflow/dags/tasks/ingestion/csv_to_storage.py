@@ -33,3 +33,4 @@ def csv_to_storage(
         logger.info("Upload do arquivo %s foi realizado", local_file_path)
     except Exception as e:
         logger.error("Erro encontrado: %s", e)
+        raise e

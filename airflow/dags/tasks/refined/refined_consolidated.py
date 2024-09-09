@@ -1,5 +1,6 @@
 from google.cloud.bigquery import Client as BqClient
 from airflow.decorators import task
+import pandas
 from dags_util import upload_to_bq
 
 import logging
@@ -12,15 +13,7 @@ logger = logging.getLogger(__name__)
 logger.setLevel("INFO")
 
 
-@task
-def consolidated_refined():
-    """
-    Task responsável por gerar a tabela consolidada.
-
-    Quis fazer em SQL só para ter mais variedade de tipos de Tasks.
-    Dessa forma, pude aproveitar um pouco da vantagem de estar conectado num ambiente GCP com Big Query
-    """
-
+def get_consolidated() -> pandas.DataFrame:
     bq_client = BqClient(project=PROJECT)
 
     query = """
@@ -44,9 +37,23 @@ def consolidated_refined():
         inner join receitas_agg r on d.nome_fonte_recurso = r.nome_fonte_recurso
         order by d.total_liquidado desc
     """
+
     rows = bq_client.query(query)
     df = rows.to_dataframe()
 
-    target_namespace = f"{PROJECT}.gdv_refined.consolidated"
+    return df
 
-    upload_to_bq(df, target_namespace)
+
+@task
+def create_consolidated():
+    """
+    Task responsável por gerar a tabela consolidada.
+
+    Quis fazer em SQL só para ter mais variedade de tipos de Tasks.
+    Dessa forma, pude aproveitar um pouco da vantagem de estar conectado num ambiente GCP com Big Query
+    """
+
+    target_namespace = f"{PROJECT}.gdv_refined.consolidated"
+    consolidated = get_consolidated()
+
+    upload_to_bq(consolidated, target_namespace)

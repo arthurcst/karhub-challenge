@@ -35,14 +35,17 @@ def storage_to_raw(
 
     table_id = f"{PROJECT}.{dataset_name}.{table_name}"
 
-    # Leitura do arquivo no GCS
     client = StorageClient(project=PROJECT)
-    bucket = client.bucket(bucket_name)
-    blob = bucket.blob(gcs_file_path)
+    try:
+        bucket = client.bucket(bucket_name)
+        blob = bucket.blob(gcs_file_path)
+    except Exception as e:
+        logger.error("Erro encontrado: %s, e")
+        raise e
 
     content = blob.download_as_bytes()
-    data = BytesIO(content)
 
+    data = BytesIO(content)
     df = pd.read_csv(data, encoding="latin_1")
 
     # Tratamento básico para o Schema ter qualidade + rastreabilidade da ingestão
@@ -52,6 +55,9 @@ def storage_to_raw(
         # Tendo em vista que pode ser um problema para o autoschema do BigQuery
         df = df.drop(columns=["Unnamed: 3"])
 
-    df = df.drop(df.index[-1])
-    df["dt_insert"] = pd.to_datetime(pendulum.now("utc"))
+    df = df.drop(df.index[-1])  # Remoção da linha de Total
+    df["dt_insert"] = pd.to_datetime(
+        pendulum.now("utc")
+    )  # Adição da coluna de controle de data
+
     upload_to_bq(df=df, namespace=table_id)

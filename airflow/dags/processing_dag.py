@@ -1,8 +1,8 @@
 """Arquivo responsável pela criação da Dag de processamento e suas tasks."""
 
-from tasks.refined.refined_consolidated import consolidated_refined
-from tasks.trusted.trusted_despesas import tratamento_despesas
-from tasks.trusted.trusted_receitas import tratamento_receitas
+from tasks.refined.refined_consolidated import create_consolidated
+from tasks.trusted.trusted_despesas import create_trusted_despesas
+from tasks.trusted.trusted_receitas import create_trusted_receitas
 from tasks.ingestion.csv_to_storage import csv_to_storage
 from tasks.raw.storage_to_raw import storage_to_raw
 
@@ -82,10 +82,10 @@ def processing_dag():
         gcs_file_path=receitas_gcs_file_path, table_name="receitas"
     )
 
-    despesas_trusted = tratamento_despesas()
-    receitas_trusted = tratamento_receitas()
+    despesas_trusted = create_trusted_despesas()
+    receitas_trusted = create_trusted_receitas()
 
-    consolidada_refined = consolidated_refined()
+    consolidada_refined = create_consolidated()
 
     extraction_despesas >> despesas_export_to_raw >> despesas_trusted  # type: ignore
     extraction_receitas >> receitas_export_to_raw >> receitas_trusted  # type: ignore
