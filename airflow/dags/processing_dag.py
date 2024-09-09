@@ -1,15 +1,15 @@
 """Arquivo responsável pela criação da Dag de processamento e suas tasks."""
 
-from dags_util import on_failure, on_success, get_dollar_quotation, upload_to_bq
-from google.cloud.storage.client import Client as StorageClient
-from google.cloud.bigquery import Client as BqClient
-from airflow.decorators import task, dag
+from tasks.refined.refined_consolidated import create_consolidated
+from tasks.trusted.trusted_despesas import create_trusted_despesas
+from tasks.trusted.trusted_receitas import create_trusted_receitas
+from tasks.ingestion.gdv_storage import csv_to_storage
+from tasks.raw.gdv_raw import create_raw_gdv
+
+from dags_util import on_failure, on_success
+from airflow.decorators import dag
 from datetime import timedelta
-from io import BytesIO
 
-
-import polars as pl
-import pandas as pd
 import pendulum
 import logging
 import os
@@ -58,228 +58,7 @@ default_args = {
     on_failure_callback=on_failure,
 )
 def processing_dag():
-
-    @task
-    def csv_to_storage(
-        local_file_path: str,
-        gcs_file_path: str,
-        bucket_name: str = "etl-karhub-dados-sp",
-    ):
-        """Task responsável pela extração do arquivo .csv local para o bucket na GCP.
-
-        Args:
-            local_file_path (str): Caminho para o arquivo dentro da máquina.
-            gcs_file_path (str): Caminho para o arquivo dentro do bucket.
-            bucket_name (str, optional): Nome do bucket. Defaults to "etl-karhub-dados-sp".
-        """
-
-        client = StorageClient(project=PROJECT)
-        try:
-            bucket = client.bucket(bucket_name)
-            blob = bucket.blob(gcs_file_path)
-            blob.upload_from_filename(local_file_path)
-            logger.info("Upload do arquivo %s foi realizado", local_file_path)
-        except Exception as e:
-            logger.error("Erro encontrado: %s", e)
-
-    @task
-    def storage_to_raw(
-        gcs_file_path: str,
-        table_name: str,
-        dataset_name: str = "gdv_raw",
-        bucket_name: str = "etl-karhub-dados-sp",
-    ):
-        """Task responsável por puxar os dados do GCS para o BQ.
-
-        Args:
-            gcs_file_path (str): Caminho para o arquivo dentro do bucket.
-            table_name (str): Nome da tabela.
-            dataset_name (str, optional): Nome do dataset. Defaults to "gdv_raw".
-            bucket_name (str, optional): Nome do bucket. Defaults to "etl-karhub-dados-sp".
-        """
-
-        table_id = f"{PROJECT}.{dataset_name}.{table_name}"
-
-        # Leitura do arquivo no GCS
-        client = StorageClient(project=PROJECT)
-        bucket = client.bucket(bucket_name)
-        blob = bucket.blob(gcs_file_path)
-
-        content = blob.download_as_bytes()
-        data = BytesIO(content)
-
-        df = pd.read_csv(data, encoding="latin_1")
-
-        # Tratamento básico para o Schema ter qualidade + rastreabilidade da ingestão
-
-        if table_name == "despesas":
-            # Essa tabela tem uma coluna vazia no .csv, então removeremos ela aqui.
-            # Tendo em vista que pode ser um problema para o autoschema do BigQuery
-            df = df.drop(columns=["Unnamed: 3"])
-
-        df = df.drop(df.index[-1])
-        df["dt_insert"] = pd.to_datetime(pendulum.now("utc"))
-        upload_to_bq(df=df, namespace=table_id)
-
-    @task
-    def tratamento_despesas():
-        """
-        Task responsável pelo tratamento da tabela Raw de despesas.
-
-        Os dados são extraídos diretamente do BQ.
-        O tratamento é feito utilizando Polars.
-        """
-
-        bq_client = BqClient(project=PROJECT)
-        namespace = f"{PROJECT}.gdv_raw.despesas"
-
-        # Em caso de um processamento incremental, faríamos a extração apenas
-        # do dado do dia em questão.
-        # para isso, temos a coluna dt_insert!
-        query = f"""
-                    SELECT *
-                    FROM `{namespace}`
-                """
-
-        rows = bq_client.query(query)
-
-        data_despesas = rows.to_dataframe()
-        data_despesas = pl.DataFrame(data_despesas)
-
-        dollar = get_dollar_quotation()
-
-        despesas = (
-            data_despesas.with_columns(
-                pl.col("Liquidado")
-                .map_elements(
-                    lambda x: round(
-                        float(x.strip().replace(".", "").replace(",", ".")) * dollar, 2
-                    ),
-                    return_dtype=pl.Float64,
-                )
-                .alias("liquidado"),
-                pl.col("Fonte de Recursos")
-                .str.splitn(" - ", 2)
-                .struct.field("field_0")
-                .alias("id_fonte_recurso"),
-                pl.col("Fonte de Recursos")
-                .str.splitn(" - ", 2)
-                .struct.field("field_1")
-                .alias("nome_fonte_recurso"),
-            )
-            .filter(~pl.col("Despesa").str.contains("TOTAL"))
-            .select(
-                pl.col("id_fonte_recurso"),
-                pl.col("nome_fonte_recurso"),
-                pl.col("Despesa").alias("despesa"),
-                pl.col("liquidado"),
-                pl.col("dt_insert"),
-            )
-        )
-
-        target_namespace = f"{PROJECT}.gdv_trusted.despesas"
-
-        upload_to_bq(despesas.to_pandas(), target_namespace)
-
-    @task
-    def tratamento_receitas():
-        """
-        Task responsável pelo tratamento da tabela Raw de receitas.
-
-        Os dados são extraídos diretamente do BQ.
-        O tratamento é feito utilizando Polars.
-        """
-
-        bq_client = BqClient(project=PROJECT)
-        namespace = f"{PROJECT}.gdv_raw.receitas"
-
-        # Em caso de um processamento incremental, faríamos a extração apenas
-        # do dado do dia em questão.
-        # para isso, temos a coluna dt_insert!
-        query = f"""
-                    SELECT *
-                    FROM `{namespace}`
-                """
-
-        rows = bq_client.query(query)
-
-        data_receitas = rows.to_dataframe()
-        data_receitas = pl.DataFrame(data_receitas)
-
-        dollar = get_dollar_quotation()
-        receitas = (
-            data_receitas.with_columns(
-                pl.col("Arrecadado")
-                .map_elements(
-                    lambda x: round(
-                        float(x.strip().replace(".", "").replace(",", ".")) * dollar, 2
-                    ),
-                    return_dtype=pl.Float64,
-                )
-                .alias("arrecadado"),
-                pl.col("Fonte de Recursos")
-                .str.splitn(" - ", 2)
-                .struct.field("field_0")
-                .alias("id_fonte_recurso"),
-                pl.col("Fonte de Recursos")
-                .str.splitn(" - ", 2)
-                .struct.field("field_1")
-                .alias("nome_fonte_recurso"),
-            )
-            .filter(~pl.col("Receita").str.contains("TOTAL"))
-            .select(
-                pl.col("id_fonte_recurso"),
-                pl.col("nome_fonte_recurso"),
-                pl.col("Receita").alias("receita"),
-                pl.col("arrecadado"),
-                pl.col("dt_insert"),
-            )
-        )
-
-        target_namespace = f"{PROJECT}.gdv_trusted.receitas"
-
-        upload_to_bq(receitas.to_pandas(), target_namespace)
-
-    @task
-    def consolidated_refined():
-        """
-        Task responsável por gerar a tabela consolidada.
-
-        Quis fazer em SQL só para ter mais variedade de tipos de Tasks.
-        Dessa forma, pude aproveitar um pouco da vantagem de estar conectado num ambiente GCP com Big Query
-        """
-
-        bq_client = BqClient(project=PROJECT)
-
-        query = """
-            with despesas_agg as (
-            select
-                id_fonte_recurso,
-                nome_fonte_recurso,
-                round(sum(liquidado), 2) as total_liquidado
-            from `gdv_trusted.despesas`
-            group by id_fonte_recurso, nome_fonte_recurso
-            ),
-
-            receitas_agg as (
-            select nome_fonte_recurso,
-            round(sum(arrecadado), 2) as total_arrecadado
-            from `gdv_trusted.receitas`
-            group by nome_fonte_recurso
-            )
-
-            select  d.id_fonte_recurso, d.nome_fonte_recurso,d.total_liquidado, r.total_arrecadado from despesas_agg d
-            inner join receitas_agg r on d.nome_fonte_recurso = r.nome_fonte_recurso
-            order by d.total_liquidado desc
-        """
-        rows = bq_client.query(query)
-        df = rows.to_dataframe()
-
-        target_namespace = f"{PROJECT}.gdv_refined.consolidated"
-
-        upload_to_bq(df, target_namespace)
-
-    # Paths dos arquivos locais / gcs
+    """Dag responsável por orquestrar o Pipeline de ETL."""
 
     despesas_file_path = "/opt/airflow/files/gdvDespesasExcel.csv"
     receitas_file_path = "/opt/airflow/files/gdvReceitasExcel.csv"
@@ -295,18 +74,18 @@ def processing_dag():
     extraction_receitas = csv_to_storage.override(task_id="upload_receitas")(
         receitas_file_path, receitas_gcs_file_path, BUCKET
     )
-    despesas_export_to_raw = storage_to_raw.override(task_id="despesas_raw")(
+    despesas_export_to_raw = create_raw_gdv.override(task_id="despesas_raw")(
         gcs_file_path=despesas_gcs_file_path, table_name="despesas"
     )
 
-    receitas_export_to_raw = storage_to_raw.override(task_id="receitas_raw")(
+    receitas_export_to_raw = create_raw_gdv.override(task_id="receitas_raw")(
         gcs_file_path=receitas_gcs_file_path, table_name="receitas"
     )
 
-    despesas_trusted = tratamento_despesas()
-    receitas_trusted = tratamento_receitas()
+    despesas_trusted = create_trusted_despesas()
+    receitas_trusted = create_trusted_receitas()
 
-    consolidada_refined = consolidated_refined()
+    consolidada_refined = create_consolidated()
 
     extraction_despesas >> despesas_export_to_raw >> despesas_trusted  # type: ignore
     extraction_receitas >> receitas_export_to_raw >> receitas_trusted  # type: ignore

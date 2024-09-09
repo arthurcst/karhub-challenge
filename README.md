@@ -19,21 +19,37 @@ Mais informações podem ser encontradas no repositório oficial do desafio.
 ```shell
 .
 ├── airflow
-│   ├── config
-│   ├── credentials
-│   │   └── karhub-key.json
-│   ├── dags
-│   │   └── processing_dag.py
-│   ├── docker-compose.yaml
-│   ├── Dockerfile
-│   └── plugins
-├── data_engineer_test_v2
-│   ├── gdvDespesasExcel.csv
-│   ├── gdvReceitasExcel.csv
-│   └── README.md
+│   ├── config
+│   ├── credentials (montado como /credentials)
+│   │   └── karhub-key.json
+│   ├── dags (montado como /dags)
+│   │   ├── dags_util.py
+│   │   ├── processing_dag.py
+│   │   └── tasks
+│   │       ├── ingestion
+│   │       │   └── csv_to_storage.py
+│   │       ├── raw
+│   │       │   └── storage_to_raw.py
+│   │       ├── refined
+│   │       │   └── refined_consolidated.py
+│   │       └── trusted
+│   │           ├── trusted_despesas.py
+│   │           └── trusted_receitas.py
+│   ├── docker-compose.yaml
+│   ├── Dockerfile
+│   └── plugins (montado como /plugins)
+├── data_engineer_test_v2 (montado como /file)
+│   ├── gdvDespesasExcel.csv
+│   ├── gdvReceitasExcel.csv
+│   └── README.md
 ├── notebooks
-│   ├── desenvolvimento.ipynb
-│   └── exploratory.ipynb
+│   ├── desenvolvimento.ipynb
+│   └── exploratory.ipynb
+├── public (imagens para o README)
+│   ├── airflow_interface.png
+│   ├── airflow_tasks.png
+│   ├── bigquery_refined.png
+│   └── trusted_despesas.png
 └── README.md
 ```
 
@@ -81,9 +97,11 @@ Algumas modificações foram feitas para se adequar ao meu método de desenvolvi
 
 #### O Pipeline 🪁
 
-Dividi o Pipeline em 4 etapas, sendo 1 para extração, 1 para load e 2 para tratamento.
+![Pipeline](./public/airflow.png)
 
-![alt text](./public/airflow_tasks.png)
+Dividi o Pipeline em 4 etapas, sendo 1 para extração, 2 para tratamento e 1 para load (apesar do load ocorrer em vários momentos diferentes).
+
+![Tasks no Airflow](./public/airflow_tasks.png)
 
 ##### Extração
 
@@ -122,9 +140,19 @@ O processo de Load é executado em várias etapas.
     -   Temos as fontes da tabela `refined` disponíveis para consulta, o que nos ajuda nas perguntas finais do projeto
     -   Como fizemos o load na etapa 1, temos as entidades `despesa` e `receita` bem definidas na camada trusted, o que facilita algumas análises
 
+##### Organização
+
+As Tasks foram modularizadas e estão dentro do diretório /tasks, separadas por nível de tratamento.
+
+Tasks da zona `ingestion` e `raw` são bem modulares, não precisando ser uma task para cada arquivo.
+
+Tasks da zona `trusted` criam entidades de ==despesa== e de ==receita==, facilitando consultas específicas para os seus devidos contextos.
+
+Task da zona `refined` é apenas uma pois é uma consolidada, é a tabela final solicitada no desafio.
+
 ### data_engineer_test_v2
 
-Submódulo do projeto. Inclui os arquivos de dados e a descrição do projeto.
+Submódulo do projeto. Inclui os arquivos de dados e a descrição do desafio.
 
 -   Dados de SP
     -   Despesas
@@ -133,6 +161,8 @@ Submódulo do projeto. Inclui os arquivos de dados e a descrição do projeto.
 ### Notebooks
 
 Notebooks utilizados para análise exploratória e desenvolvimento e das funções das Tasks.
+
+Sou uma pessoa bem visual, então utilizar notebooks me ajuda a desenvolver acompanhando o que está acontecendo de forma interativa.
 
 ---
 
